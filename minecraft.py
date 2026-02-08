@@ -1,0 +1,67 @@
+import socket
+import struct
+import subprocess
+from time import sleep
+# --- CONFIGURATION ---
+HOST = '0.0.0.0'
+PORT = 25565
+KICK_MESSAGE = '{"text": "Varj egy percet \n \n Indul a szerver"}'
+import json
+def pack_varint(d):
+    o = b""
+    while True:
+        b = d & 0x7F
+        d >>= 7
+        if d != 0:
+            o += struct.pack("B", b | 0x80)
+        else:
+            o += struct.pack("B", b)
+            break
+    return o
+
+def pack_msg(packet_id, data):
+    return pack_varint(len(packet_id + data)) + packet_id + data
+
+def start_placeholder():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((HOST, PORT))
+        s.listen(5)
+        print(f"[*] Placeholder running on {PORT}. Waiting for connections...")
+
+        while True:
+            client, addr = s.accept()
+            try:
+                # 1. Receive Handshake
+                data = client.recv(1024)
+                print(data)
+
+
+                # 2. Send Disconnect Packet (Login state is packet 0x00)
+                # We format the message as a JSON string
+                reason = pack_varint(len(KICK_MESSAGE)) + KICK_MESSAGE.encode('utf-8')
+                packet = pack_msg(b'\x00', reason)
+                client.sendall(packet)
+                print(packet)
+                print(f"[!] Kicked {addr[0]}",KICK_MESSAGE)
+                if data.endswith(b"\xdd\x02"):return True
+            except Exception as e:
+                print(f"[!] Error: {e}")
+                if e is KeyboardInterrupt:return False
+            finally:
+                client.close()
+
+def get_status():
+    return subprocess.run("systemctl is-active minecraft-server".split(" ")).returncode==0
+
+if __name__ == "__main__":
+    while True:
+
+        print(get_status())
+        if not get_status():
+            if start_placeholder():
+                print("starting")
+                p=subprocess.run(["systemctl","start","minecraft-server"])
+        sleep(120)
+
+
